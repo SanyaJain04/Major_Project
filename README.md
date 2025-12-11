@@ -17,7 +17,7 @@ No installation needed! Simply follow these steps:
 1) Open Google Colab:
 Go to colab.research.google.com
 Click on "GitHub" tab
-Paste the repository URL: https://github.com/yourusername/multimodal-content-moderation
+Paste the repository URL.
 
 2) Run Notebooks Directly:
 Open any .ipynb file from the notebooks/ folder
