@@ -4,8 +4,8 @@ ________________________________________________________________________________
 A comprehensive AI-powered system that detects harmful online content across multiple modalities. 
 
 The framework integrates:
-Hate Speech Detection using transformer models (BERT, RoBERTa, HateBERT) and deep learning architectures
-Morphed Image/Deepfake Detection using state-of-the-art vision models (ViT, EfficientNet-B3, SwinV2, ConvNeXt V2, Graph CNN, LSTM, GRU)
+Hate Speech Detection using transformer models (BERT, RoBERTa, HateBERT), logistic regression, CNN, SVM, LSTM, BiLSTM and hybrid models.
+Morphed Image/Deepfake Detection using state-of-the-art vision models (ViT, EfficientNet-B3, SwinV2, ConvNeXt V2, Graph CNN, LSTM, GRU).
 
 The system processes text, images, and video content to identify manipulated media and harmful language in real-time, providing automated moderation for online platforms.
 _____________________________________________________________________________________________________________________________________________________________________________________________________________________
