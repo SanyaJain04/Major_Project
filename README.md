@@ -8,6 +8,9 @@ Hate Speech Detection using transformer models (BERT, RoBERTa, HateBERT), logist
 Morphed Image/Deepfake Detection using state-of-the-art vision models (ViT, EfficientNet-B3, SwinV2, ConvNeXt V2, Graph CNN, LSTM, GRU).
 
 The system processes text, images, and video content to identify manipulated media and harmful language in real-time, providing automated moderation for online platforms.
+
+<img width="349" height="660" alt="Project Architecture" src="https://github.com/user-attachments/assets/d5788d92-dfea-476e-8f4c-b906730617df" />
+
 _____________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 Installation Instructions:
