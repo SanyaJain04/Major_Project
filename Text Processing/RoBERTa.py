@@ -1,0 +1,559 @@
+from transformers import RobertaForSequenceClassification, get_scheduler, AutoTokenizer
+from torch.utils.data import Dataset, DataLoader
+from datasets import load_dataset
+import torch
+from torch.optim import AdamW
+
+# 3 labels: 0 = hate_speech, 1 = abusive, 2 = neutral
+id2label = {
+    0: "hate_speech",
+    1: "abusive",
+    2: "neutral"
+}
+label2id = {v: k for k, v in id2label.items()}
+
+model = RobertaForSequenceClassification.from_pretrained(
+    "roberta-base",
+    num_labels=3,
+    id2label=id2label,
+    label2id=label2id,
+)
+
+tokenizer = AutoTokenizer.from_pretrained("roberta-base")
+
+model
+
+# freeze all base parameters
+for param in model.roberta.parameters():
+    param.requires_grad = False
+
+# Make sure classifier is trainable
+for param in model.classifier.parameters():
+    param.requires_grad = True
+
+# Unfreeze last 4 encoder layers for better learning
+for layer in model.roberta.encoder.layer[-4:]:
+    for param in layer.parameters():
+        param.requires_grad = True
+
+import re
+
+class HateSpeechDataset(Dataset):
+    def __init__(self, dataset, tokenizer, max_length=128):
+        self.dataset = dataset
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.dataset)
+
+    @staticmethod
+    def clean_text(text):
+        text = text.lower()
+        text = re.sub(r"http\S+", "", text)  # remove URLs
+        text = re.sub(r"@\w+", "", text)    # remove @mentions
+        text = re.sub(r"#", "", text)       # remove #
+        text = re.sub(r"[^a-zA-Z0-9\s]", "", text)  # remove emojis/symbols
+        text = " ".join(text.split())       # remove extra spaces
+        return text
+
+    def __getitem__(self, idx):
+        text = self.clean_text(self.dataset[idx]["tweet"])
+        label = self.dataset[idx]["class"]
+
+        encoding = self.tokenizer(
+            text,
+            truncation=True,
+            padding="max_length",
+            max_length=self.max_length,
+            return_tensors="pt"
+        )
+
+        return {
+            "input_ids": encoding["input_ids"].squeeze(0),
+            "attention_mask": encoding["attention_mask"].squeeze(0),
+            "labels": torch.tensor(label, dtype=torch.long)
+        }
+
+# Load the hate speech dataset
+raw_dataset = load_dataset("csv", data_files="/content/dataset.csv")
+
+# single split → we create train/validation split
+split_dataset = raw_dataset["train"].train_test_split(
+    test_size=0.2,
+    seed=42,
+)
+
+train_dataset_hs = HateSpeechDataset(split_dataset["train"], tokenizer)
+val_dataset_hs   = HateSpeechDataset(split_dataset["test"], tokenizer)
+
+train_loader = DataLoader(train_dataset_hs, batch_size=16, shuffle=True)
+val_loader   = DataLoader(val_dataset_hs, batch_size=128)
+
+for batch in train_loader:
+    print(batch)
+    break
+
+optimizer = AdamW(model.parameters(), lr=2e-5)
+
+num_epochs = 10
+num_training_steps = num_epochs * len(train_loader)
+lr_scheduler = get_scheduler(
+    "linear",
+    optimizer=optimizer,
+    num_warmup_steps=0,
+    num_training_steps=num_training_steps,
+)
+print(num_training_steps)
+
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+class_counts = [2000, 4000, 6000]  # change using your dataset stats
+class_weights = torch.tensor([1/x for x in class_counts], dtype=torch.float).to(device)
+
+loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
+
+from tqdm.auto import tqdm
+
+# Define device here
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+model.to(device)
+
+progress_bar = tqdm(range(num_training_steps))
+
+model.train()
+for epoch in range(num_epochs):
+    epoch_loss = 0
+    i = 1
+    for batch in train_loader:
+        batch = {k: v.to(device) for k, v in batch.items()}
+        outputs = model(**batch)
+        logits = outputs.logits
+        loss = loss_fn(logits, batch["labels"])
+        epoch_loss += loss.item()
+        optimizer.step()
+        lr_scheduler.step()
+        optimizer.zero_grad()
+        if i % 10 == 0:
+            progress_bar.update(10)
+        i += 1
+
+    print(f'loss = {epoch_loss / i}, epoch = {epoch}')
+
+!pip install evaluate
+
+import evaluate
+import collections
+
+# Load individual metrics with desired average parameter
+accuracy_metric = evaluate.load("accuracy")
+f1_metric = evaluate.load("f1")
+precision_metric = evaluate.load("precision")
+recall_metric = evaluate.load("recall")
+
+# Create a list of these loaded metric objects
+all_metrics = [accuracy_metric, f1_metric, precision_metric, recall_metric]
+
+model.eval()
+
+# Loop through batches and add predictions to each metric
+for batch in val_loader:
+    batch = {k: v.to(device) for k, v in batch.items()}
+    with torch.no_grad():
+        outputs = model(**batch)
+
+    logits = outputs.logits
+    predictions = torch.argmax(logits, dim=-1)
+
+    for m in all_metrics:
+        m.add_batch(predictions=predictions, references=batch["labels"])
+
+# Compute results for each metric and combine them
+combined_results = collections.defaultdict(float)
+for m in all_metrics:
+    # Explicitly pass 'average' for multiclass metrics when computing
+    if m.name in ["f1", "precision", "recall"]:
+        results = m.compute(average="weighted")
+    else:
+        results = m.compute()
+    combined_results.update(results)
+
+print(combined_results)
+
+optimizer = AdamW(model.parameters(), lr=2e-5)
+
+num_epochs = 20
+num_training_steps = num_epochs * len(train_loader)
+lr_scheduler = get_scheduler(
+    "linear",
+    optimizer=optimizer,
+    num_warmup_steps=0,
+    num_training_steps=num_training_steps,
+)
+print(num_training_steps)
+
+import os
+import random
+import math
+import time
+from collections import Counter
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, f1_score, accuracy_score, confusion_matrix
+
+import torch
+from torch.utils.data import Dataset, DataLoader
+from torch.optim import AdamW
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup
+
+DATA_PATH = "/content/dataset.csv"
+MODEL_NAME = "roberta-base"
+OUTPUT_DIR = "./roberta_best"
+MAX_LENGTH = 128
+BATCH_SIZE = 16           # increase if you have GPU memory
+EVAL_BATCH_SIZE = 64
+EPOCHS = 8
+LR = 2e-5
+WEIGHT_DECAY = 0.01
+WARMUP_STEPS = 0
+GRAD_CLIP = 1.0
+ACCUMULATION_STEPS = 1    # use >1 if batch size small
+UNFREEZE_LAST_N = 6       # number of final encoder layers to unfreeze (tune)
+PATIENCE = 3              # early stopping patience (on val weighted F1)
+SEED = 42
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+SAVE_BEST_ONLY = True
+
+def set_seed(seed=SEED):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if DEVICE.type == "cuda":
+        torch.cuda.manual_seed_all(seed)
+set_seed()
+
+
+class HSDataset(Dataset):
+    def __init__(self, texts, labels, tokenizer, max_length=MAX_LENGTH):
+        self.texts = texts
+        self.labels = labels
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        text = str(self.texts[idx])
+        return {"text": text, "label": int(self.labels[idx])}
+
+def collate_fn(batch, tokenizer):
+    texts = [x["text"] for x in batch]
+    labels = torch.tensor([x["label"] for x in batch], dtype=torch.long)
+    enc = tokenizer(
+        texts,
+        truncation=True,
+        padding=True,   # dynamic padding
+        max_length=MAX_LENGTH,
+        return_tensors="pt"
+    )
+    enc["labels"] = labels
+    return enc
+
+def detect_columns(df):
+    # common text column names
+    text_candidates = ["text", "tweet", "sentence", "comment", "post"]
+    label_candidates = ["label", "class", "target", "category"]
+
+    text_col = None
+    label_col = None
+    for c in df.columns:
+        if c.lower() in text_candidates and text_col is None:
+            text_col = c
+        if c.lower() in label_candidates and label_col is None:
+            label_col = c
+
+    # fallback heuristics
+    if text_col is None:
+        # pick the longest-string column
+        str_cols = [c for c in df.columns if df[c].dtype == object]
+        if str_cols:
+            text_col = max(str_cols, key=lambda c: df[c].astype(str).str.len().median())
+    if label_col is None:
+        # pick a non-string column with few unique values
+        candidate = None
+        for c in df.columns:
+            if df[c].nunique() < 50 and df[c].dtype != object:
+                candidate = c
+                break
+        if candidate is None:
+            # last resort: any column with few unique values
+            candidate = min(df.columns, key=lambda c: df[c].nunique())
+        label_col = candidate
+
+    return text_col, label_col
+
+
+df = pd.read_csv(DATA_PATH)
+print(f"Loaded {len(df)} rows from {DATA_PATH}")
+text_col, label_col = detect_columns(df)
+print(f"Detected text column: {text_col} | label column: {label_col}")
+
+# Basic cleaning (light) - do not remove emojis/punctuation aggressively
+def clean_text(s):
+    if not isinstance(s, str): return ""
+    s = s.strip()
+    # remove URLs and excessive whitespace only
+    s = __import__("re").sub(r"http\S+", "", s)
+    s = __import__("re").sub(r"\s+", " ", s)
+    return s
+
+df[text_col] = df[text_col].astype(str).map(clean_text)
+
+# Ensure labels are integers 0..K-1
+if df[label_col].dtype == object:
+    labels = pd.factorize(df[label_col])[0]
+    label_mapping = dict(zip(range(len(pd.unique(labels))), pd.unique(df[label_col])))
+else:
+    labels = df[label_col].astype(int).values
+    label_mapping = None
+
+df["__label__"] = labels
+print("Label distribution:", Counter(df["__label__"].tolist()))
+
+
+trainval_df, test_df = train_test_split(df, test_size=0.10, stratify=df["__label__"], random_state=SEED)
+train_df, val_df = train_test_split(trainval_df, test_size=0.1111, stratify=trainval_df["__label__"], random_state=SEED)
+# This results ~80/10/10 split
+
+print(f"Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=len(np.unique(labels)))
+model.to(DEVICE)
+
+# Freeze all then unfreeze top N encoder layers + classifier
+for param in model.base_model.parameters():
+    param.requires_grad = False
+
+# Unfreeze classifier
+for param in model.classifier.parameters():
+    param.requires_grad = True
+
+# Unfreeze last UNFREEZE_LAST_N encoder layers if available
+try:
+    encoder = model.base_model.encoder
+    total_layers = len(encoder.layer)
+    for i in range(total_layers - UNFREEZE_LAST_N, total_layers):
+        for param in encoder.layer[i].parameters():
+            param.requires_grad = True
+    print(f"Unfroze last {UNFREEZE_LAST_N} encoder layers (of {total_layers}).")
+except Exception:
+    # some HF models have different structure; fallback to unfreeze last blocks heuristically
+    print("Could not access encoder layers to unfreeze; proceeding with classifier-only training.")
+
+train_ds = HSDataset(train_df[text_col].tolist(), train_df["__label__"].tolist(), tokenizer)
+val_ds = HSDataset(val_df[text_col].tolist(), val_df["__label__"].tolist(), tokenizer)
+test_ds = HSDataset(test_df[text_col].tolist(), test_df["__label__"].tolist(), tokenizer)
+
+train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, collate_fn=lambda b: collate_fn(b, tokenizer))
+val_loader = DataLoader(val_ds, batch_size=EVAL_BATCH_SIZE, shuffle=False, collate_fn=lambda b: collate_fn(b, tokenizer))
+test_loader = DataLoader(test_ds, batch_size=EVAL_BATCH_SIZE, shuffle=False, collate_fn=lambda b: collate_fn(b, tokenizer))
+
+counts = train_df["__label__"].value_counts().sort_index().values.astype(float)
+inv_freq = 1.0 / (counts + 1e-8)
+class_weights = inv_freq / inv_freq.sum() * len(counts)  # normalized
+class_weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(DEVICE)
+print("Class weights:", class_weights)
+
+loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights_tensor)
+
+
+optimizer_grouped_parameters = [
+    {"params": [p for n, p in model.named_parameters() if p.requires_grad], "weight_decay": WEIGHT_DECAY}
+]
+optimizer = AdamW(optimizer_grouped_parameters, lr=LR)
+
+total_steps = math.ceil(len(train_loader) / ACCUMULATION_STEPS) * EPOCHS
+scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=total_steps)
+
+
+scaler = torch.cuda.amp.GradScaler(enabled=(DEVICE.type=="cuda"))
+
+best_val_f1 = -1.0
+no_improve_epochs = 0
+global_step = 0
+
+Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+
+for epoch in range(1, EPOCHS + 1):
+    model.train()
+    epoch_loss = 0.0
+    start = time.time()
+
+    for step, batch in enumerate(train_loader, 1):
+        input_ids = batch["input_ids"].to(DEVICE)
+        attention_mask = batch["attention_mask"].to(DEVICE)
+        labels_batch = batch["labels"].to(DEVICE)
+
+        optimizer.zero_grad() if ACCUMULATION_STEPS == 1 else None
+
+        with torch.cuda.amp.autocast(enabled=(DEVICE.type=="cuda")):
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels_batch)
+            loss = outputs.loss / ACCUMULATION_STEPS
+
+        scaler.scale(loss).backward()
+
+        if step % ACCUMULATION_STEPS == 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], GRAD_CLIP)
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            optimizer.zero_grad()
+            global_step += 1
+
+        epoch_loss += loss.item() * ACCUMULATION_STEPS
+
+    # Validation
+    model.eval()
+    preds = []
+    trues = []
+    with torch.no_grad():
+        for batch in val_loader:
+            input_ids = batch["input_ids"].to(DEVICE)
+            attention_mask = batch["attention_mask"].to(DEVICE)
+            labels_batch = batch["labels"].to(DEVICE)
+
+            with torch.cuda.amp.autocast(enabled=(DEVICE.type=="cuda")):
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                logits = outputs.logits
+
+            batch_preds = torch.argmax(logits, dim=1).cpu().numpy()
+            preds.extend(batch_preds.tolist())
+            trues.extend(labels_batch.cpu().numpy().tolist())
+
+    val_f1 = f1_score(trues, preds, average="weighted")
+    val_acc = accuracy_score(trues, preds)
+    epoch_time = time.time() - start
+    print(f"Epoch {epoch}/{EPOCHS} | loss: {epoch_loss/len(train_loader):.4f} | val_f1: {val_f1:.4f} | val_acc: {val_acc:.4f} | time: {epoch_time:.1f}s")
+
+    # Early stopping + save best
+    if val_f1 > best_val_f1:
+        best_val_f1 = val_f1
+        no_improve_epochs = 0
+        model_save_path = os.path.join(OUTPUT_DIR, "best_model.pt")
+        torch.save({
+            "model_state_dict": model.state_dict(),
+            "tokenizer": tokenizer,
+            "label_mapping": label_mapping,
+            "val_f1": val_f1
+        }, model_save_path)
+        print(f"Saved best model (val_f1={val_f1:.4f}) to {model_save_path}")
+    else:
+        no_improve_epochs += 1
+        if no_improve_epochs >= PATIENCE:
+            print(f"No improvement for {PATIENCE} epochs — early stopping.")
+            break
+
+
+checkpoint = torch.load(os.path.join(OUTPUT_DIR, "best_model.pt"), map_location=DEVICE, weights_only=False)
+model.load_state_dict(checkpoint["model_state_dict"])
+model.to(DEVICE)
+model.eval()
+
+all_preds = []
+all_trues = []
+all_probs = []
+
+with torch.no_grad():
+    for batch in test_loader:
+        input_ids = batch["input_ids"].to(DEVICE)
+        attention_mask = batch["attention_mask"].to(DEVICE)
+        labels_batch = batch["labels"].to(DEVICE)
+
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+        probs = torch.softmax(logits, dim=1).cpu().numpy()
+        preds = np.argmax(probs, axis=1)
+
+        all_preds.extend(preds.tolist())
+        all_trues.extend(labels_batch.cpu().numpy().tolist())
+        all_probs.extend(probs.tolist())
+
+print("Test accuracy:", accuracy_score(all_trues, all_preds))
+print("Test weighted F1:", f1_score(all_trues, all_preds, average="weighted"))
+print("Classification report:\n", classification_report(all_trues, all_preds, digits=4))
+print("Confusion matrix:\n", confusion_matrix(all_trues, all_preds))
+
+import torch
+import os
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+# Load the best model and tokenizer
+OUTPUT_DIR = "./roberta_best"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+checkpoint = torch.load(os.path.join(OUTPUT_DIR, "best_model.pt"), map_location=DEVICE, weights_only=False)
+
+# Re-initialize model architecture (important for loading weights correctly)
+# Determine num_labels robustly
+if checkpoint.get("label_mapping") is not None:
+    num_labels = len(checkpoint["label_mapping"])
+else:
+    # If label_mapping is None, derive num_labels from the model state dict (output layer size)
+    # This assumes 'classifier.out_proj.weight' exists in the state dict
+    num_labels = checkpoint["model_state_dict"]["classifier.out_proj.weight"].shape[0]
+
+model = AutoModelForSequenceClassification.from_pretrained(
+    "roberta-base",
+    num_labels=num_labels
+)
+model.load_state_dict(checkpoint["model_state_dict"])
+model.to(DEVICE)
+model.eval()
+
+tokenizer = checkpoint["tokenizer"] # The tokenizer was saved directly
+
+# Reconstruct label mapping if available
+if checkpoint.get("label_mapping") is not None:
+    id2label = {i: label for i, label in enumerate(checkpoint["label_mapping"])}
+else:
+    # If label_mapping was None during training, it implies integer labels 0, 1, 2...
+    # We use the default mapping based on the problem statement (3 labels: hate_speech, abusive, neutral)
+    id2label = {0: "hate_speech", 1: "abusive", 2: "neutral"}
+
+
+def predict_sentiment(text):
+    inputs = tokenizer(
+        text,
+        truncation=True,
+        padding=True,
+        max_length=128,
+        return_tensors="pt"
+    )
+    inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    logits = outputs.logits
+    probabilities = torch.softmax(logits, dim=1)
+    predicted_class_id = torch.argmax(probabilities, dim=1).item()
+
+    return id2label[predicted_class_id], probabilities[0][predicted_class_id].item()
+
+print("Model loaded and ready for prediction. Type 'exit' to quit.")
+
+while True:
+    user_input = input("Enter text: ")
+    if user_input.lower() == 'exit':
+        break
+
+    if user_input.strip(): # Ensure input is not empty
+        predicted_label, confidence = predict_sentiment(user_input)
+        print(f"Predicted label: {predicted_label} (Confidence: {confidence:.4f})")
+    else:
+        print("Please enter some text.")

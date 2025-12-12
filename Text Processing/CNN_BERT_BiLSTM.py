@@ -1,0 +1,474 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
+from torch.optim import AdamW 
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, accuracy_score, f1_score, confusion_matrix
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+import re
+import warnings
+warnings.filterwarnings('ignore')
+
+class TextDataset(Dataset):
+    def __init__(self, texts, labels, tokenizer, max_length=128):
+        self.texts = texts
+        self.labels = labels
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        text = str(self.texts[idx])
+        label = self.labels[idx]
+
+        encoding = self.tokenizer(
+            text,
+            truncation=True,
+            padding='max_length',
+            max_length=self.max_length,
+            return_tensors='pt'
+        )
+
+        return {
+            'input_ids': encoding['input_ids'].flatten(),
+            'attention_mask': encoding['attention_mask'].flatten(),
+            'labels': torch.tensor(label, dtype=torch.long)
+        }
+
+class TransformerCNNBiLSTM(nn.Module):
+    def __init__(self, transformer_model, num_classes, hidden_dim=256,
+                 cnn_filters=100, kernel_sizes=[3, 5, 7], lstm_layers=2, dropout=0.3): # Changed kernel_sizes here
+        super(TransformerCNNBiLSTM, self).__init__()
+
+        # Transformer backbone
+        self.transformer = AutoModel.from_pretrained(transformer_model)
+        transformer_hidden_size = self.transformer.config.hidden_size
+
+        # CNN layers for local feature extraction
+        self.convs = nn.ModuleList([
+            nn.Conv1d(
+                in_channels=transformer_hidden_size,
+                out_channels=cnn_filters,
+                kernel_size=kernel_size,
+                padding=(kernel_size - 1) // 2
+            ) for kernel_size in kernel_sizes
+        ])
+
+        # BiLSTM for sequential modeling
+        self.lstm = nn.LSTM(
+            input_size=cnn_filters * len(kernel_sizes),
+            hidden_size=hidden_dim,
+            num_layers=lstm_layers,
+            bidirectional=True,
+            batch_first=True,
+            dropout=dropout if lstm_layers > 1 else 0
+        )
+
+        # Classification head
+        self.dropout = nn.Dropout(dropout)
+        self.classifier = nn.Linear(hidden_dim * 2, num_classes)  # *2 for bidirectional
+
+        # Additional layers for better learning
+        self.batch_norm = nn.BatchNorm1d(hidden_dim * 2)
+
+    def forward(self, input_ids, attention_mask):
+        # Transformer forward pass
+        transformer_outputs = self.transformer(
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+
+        # Get the last hidden states (sequence output)
+        hidden_states = transformer_outputs.last_hidden_state  # (batch_size, seq_len, hidden_size)
+
+        # Reshape for CNN: (batch_size, hidden_size, seq_len)
+        hidden_states_permuted = hidden_states.permute(0, 2, 1)
+
+        # Apply multiple CNN filters
+        cnn_outputs = []
+        for conv in self.convs:
+            conv_out = torch.relu(conv(hidden_states_permuted))
+            cnn_outputs.append(conv_out)
+
+        # Concatenate CNN outputs along feature dimension
+        cnn_combined = torch.cat(cnn_outputs, dim=1)  # (batch_size, cnn_filters * len(kernel_sizes), seq_len)
+
+        # Reshape for LSTM: (batch_size, seq_len, features)
+        lstm_input = cnn_combined.permute(0, 2, 1)
+
+        # BiLSTM forward pass
+        lstm_out, (hidden, cell) = self.lstm(lstm_input)
+
+        # Use the last hidden state for classification
+        # For bidirectional LSTM, we concatenate the last forward and backward states
+        hidden_forward = hidden[-2, :, :]  # Last forward layer
+        hidden_backward = hidden[-1, :, :]  # Last backward layer
+        lstm_final = torch.cat((hidden_forward, hidden_backward), dim=1)
+
+        # Apply batch normalization and dropout
+        lstm_final = self.batch_norm(lstm_final)
+        lstm_final = self.dropout(lstm_final)
+
+        # Final classification
+        logits = self.classifier(lstm_final)
+
+        return logits
+
+class HateSpeechDetector:
+    def __init__(self, model_name='bert-base-uncased', max_length=128): # Removed num_classes from init
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"Using device: {self.device}")
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = None # Model will be initialized in train
+        self.max_length = max_length
+        self.label_encoder = LabelEncoder()
+        self.class_names = None
+        self.model_name = model_name # Store model_name for later initialization
+
+    def load_dataset(self, file_path, text_column='text', label_column='label'):
+        """
+        Load dataset from various file formats
+        Supports: CSV, JSON, Excel, TSV
+        """
+        print(f"Loading dataset from: {file_path}")
+
+        if file_path.endswith('.csv'):
+            df = pd.read_csv(file_path)
+        elif file_path.endswith('.json'):
+            df = pd.read_json(file_path)
+        elif file_path.endswith('.xlsx') or file_path.endswith('.xls'):
+            df = pd.read_excel(file_path)
+        elif file_path.endswith('.tsv'):
+            df = pd.read_csv(file_path, sep='\t')
+        else:
+            raise ValueError("Unsupported file format. Use CSV, JSON, Excel, or TSV.")
+
+        print(f"Dataset loaded with {len(df)} samples")
+        print(f"Columns: {df.columns.tolist()}")
+
+        # Check if required columns exist
+        if text_column not in df.columns:
+            raise ValueError(f"Text column '{text_column}' not found in dataset. Available columns: {df.columns.tolist()}")
+        if label_column not in df.columns:
+            raise ValueError(f"Label column '{label_column}' not found in dataset. Available columns: {df.columns.tolist()}")
+
+        texts = df[text_column].astype(str).tolist()
+        labels = df[label_column].tolist()
+
+        return texts, labels
+
+    def analyze_dataset(self, texts, labels):
+        """Analyze the dataset distribution"""
+        print("\n=== Dataset Analysis ===")
+        print(f"Total samples: {len(texts)}")
+
+        # Label distribution
+        label_counts = Counter(labels)
+        print("\nLabel distribution:")
+        for label, count in label_counts.items():
+            print(f"  {label}: {count} samples ({count/len(labels)*100:.2f}%)") # Added missing %
+
+        # Text length analysis
+        text_lengths = [len(str(text).split()) for text in texts]
+        print(f"\nText length statistics:")
+        print(f"  Average length: {np.mean(text_lengths):.2f} words")
+        print(f"  Max length: {max(text_lengths)} words")
+        print(f"  Min length: {min(text_lengths)} words")
+
+        return label_counts
+
+    def preprocess_text(self, text):
+        """Enhanced text preprocessing"""
+        if not isinstance(text, str):
+            return ""
+
+        # Remove URLs
+        text = re.sub(r'http\S+', '', text)
+        # Remove user mentions
+        text = re.sub(r'@\w+', '', text)
+        # Remove special characters but keep basic punctuation
+        text = re.sub(r'[^\w\s!?.,]', '', text)
+        # Remove extra whitespace
+        text = re.sub(r'\s+', ' ', text)
+
+        return text.strip().lower()
+
+    def _preprocess_texts(self, texts):
+        """Helper to preprocess a list of texts."""
+        return [self.preprocess_text(text) for text in texts]
+
+    def _encode_labels(self, labels, fit=False):
+        """Encodes or transforms labels using the internal label_encoder."""
+        if fit:
+            encoded_labels = self.label_encoder.fit_transform(labels)
+            self.class_names = self.label_encoder.classes_
+            print(f"Label mapping (fitted): {dict(zip(self.label_encoder.classes_, range(len(self.class_names))))}")
+        else:
+            encoded_labels = self.label_encoder.transform(labels)
+            print(f"Label mapping (transformed): {dict(zip(self.label_encoder.classes_, range(len(self.class_names))))}")
+        return encoded_labels
+
+    def train(self, train_texts, train_labels, val_texts=None, val_labels=None,
+              epochs=5, batch_size=16, learning_rate=2e-5):
+
+        # Preprocess training texts
+        processed_train_texts = self._preprocess_texts(train_texts)
+
+        # Fit and transform training labels to determine num_classes
+        train_labels_encoded = self._encode_labels(train_labels, fit=True)
+        num_classes = len(self.class_names)
+
+        # Initialize the model AFTER knowing the actual number of classes
+        if self.model is None:
+            self.model = TransformerCNNBiLSTM(
+                transformer_model=self.model_name,
+                num_classes=num_classes # Use actual num_classes
+            ).to(self.device)
+        else:
+            # If model already exists (e.g., fine-tuning), ensure its classifier output matches
+            if self.model.classifier.out_features != num_classes:
+                self.model.classifier = nn.Linear(self.model.classifier.in_features, num_classes).to(self.device)
+                print(f"Adjusted model classifier output features to: {num_classes}")
+
+        val_texts_processed = None
+        val_labels_encoded = None
+        if val_texts is not None and val_labels is not None:
+            val_texts_processed = self._preprocess_texts(val_texts)
+            val_labels_encoded = self._encode_labels(val_labels, fit=False)
+
+        # Create datasets
+        train_dataset = TextDataset(processed_train_texts, train_labels_encoded, self.tokenizer, self.max_length)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+        val_loader = None
+        if val_texts_processed is not None:
+            val_dataset = TextDataset(val_texts_processed, val_labels_encoded, self.tokenizer, self.max_length)
+            val_loader = DataLoader(val_dataset, batch_size=batch_size)
+
+        # Optimizer and scheduler
+        optimizer = AdamW(self.model.parameters(), lr=learning_rate)
+        total_steps = len(train_loader) * epochs
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=0,
+            num_training_steps=total_steps
+        )
+        criterion = nn.CrossEntropyLoss()
+
+        # Training history
+        train_losses = []
+        val_accuracies = []
+
+        # Training loop
+        print("\n=== Starting Training ===")
+        for epoch in range(epochs):
+            self.model.train()
+            total_loss = 0
+
+            for batch_idx, batch in enumerate(train_loader):
+                optimizer.zero_grad()
+
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+
+                outputs = self.model(input_ids, attention_mask)
+                loss = criterion(outputs, labels)
+
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                optimizer.step()
+                scheduler.step()
+
+                total_loss += loss.item()
+
+                if batch_idx % 50 == 0:
+                    print(f'Epoch {epoch+1}, Batch {batch_idx}, Loss: {loss.item():.4f}')
+
+            avg_loss = total_loss / len(train_loader)
+            train_losses.append(avg_loss)
+
+            # Validation
+            if val_loader is not None:
+                val_accuracy, val_f1, _ = self.evaluate(val_loader)
+                val_accuracies.append(val_accuracy)
+                print(f'Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Val Accuracy: {val_accuracy:.4f}, Val F1: {val_f1:.4f}')
+            else:
+                print(f'Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}')
+
+        return train_losses, val_accuracies
+
+    def evaluate(self, data_loader, return_predictions=False):
+        self.model.eval()
+        predictions = []
+        true_labels = []
+        all_probabilities = []
+
+        with torch.no_grad():
+            for batch in data_loader:
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+
+                outputs = self.model(input_ids, attention_mask)
+                probabilities = torch.softmax(outputs, dim=1)
+                _, preds = torch.max(outputs, dim=1)
+
+                predictions.extend(preds.cpu().tolist())
+                true_labels.extend(labels.cpu().tolist())
+                all_probabilities.extend(probabilities.cpu().tolist())
+
+        accuracy = accuracy_score(true_labels, predictions)
+        f1 = f1_score(true_labels, predictions, average='weighted')
+
+        if return_predictions:
+            return accuracy, f1, predictions, true_labels, all_probabilities
+        return accuracy, f1, predictions # Return just accuracy, f1 for simpler validation loop
+
+    def predict(self, texts):
+        self.model.eval()
+        predictions = []
+        probabilities = []
+
+        with torch.no_grad():
+            for text in texts:
+                processed_text = self.preprocess_text(text)
+                encoding = self.tokenizer(
+                    processed_text,
+                    truncation=True,
+                    padding='max_length',
+                    max_length=self.max_length,
+                    return_tensors='pt'
+                )
+
+                input_ids = encoding['input_ids'].to(self.device)
+                attention_mask = encoding['attention_mask'].to(self.device)
+
+                output = self.model(input_ids, attention_mask)
+                prob = torch.softmax(output, dim=1)
+                _, pred = torch.max(output, dim=1)
+
+                pred_label = self.label_encoder.inverse_transform(pred.cpu().numpy())[0]
+                predictions.append(pred_label)
+                probabilities.append(prob.cpu().numpy()[0])
+
+        return predictions, probabilities
+
+    def plot_confusion_matrix(self, true_labels, predictions, save_path=None):
+        """Plot confusion matrix"""
+        cm = confusion_matrix(true_labels, predictions)
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=self.class_names,
+                    yticklabels=self.class_names)
+        plt.title('Confusion Matrix')
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path)
+        plt.show()
+
+def main():
+    # Initialize detector
+    detector = HateSpeechDetector(
+        model_name='bert-base-uncased',
+        max_length=128 # Removed num_classes
+    )
+
+    # Example usage with uploaded dataset
+    # Replace with your actual file path and column names
+    file_path = "dataset.csv"  # Change this to your file path
+    text_column = "tweet"  # Change to your text column name
+    label_column = "class"  # Change to your label column name
+
+    try:
+        # Load dataset
+        texts, labels = detector.load_dataset(file_path, text_column, label_column)
+
+        # Analyze dataset
+        detector.analyze_dataset(texts, labels)
+
+        # Split data
+        train_texts, test_texts, train_labels, test_labels = train_test_split(
+            texts, labels, test_size=0.2, random_state=42, stratify=labels
+        )
+
+        train_texts, val_texts, train_labels, val_labels = train_test_split(
+            train_texts, train_labels, test_size=0.1, random_state=42, stratify=train_labels
+        )
+
+        print(f"\nData splits:")
+        print(f"Training samples: {len(train_texts)}")
+        print(f"Validation samples: {len(val_texts)}")
+        print(f"Test samples: {len(test_texts)}")
+
+        # Train the model
+        train_losses, val_accuracies = detector.train(
+            train_texts, train_labels,
+            val_texts, val_labels,
+            epochs=5,
+            batch_size=16,
+            learning_rate=2e-5
+        )
+
+        # Evaluate on test set
+        test_texts_processed = detector._preprocess_texts(test_texts) # Use new helper
+        test_labels_encoded = detector._encode_labels(test_labels, fit=False) # Use new helper
+        test_dataset = TextDataset(test_texts_processed, test_labels_encoded, detector.tokenizer, detector.max_length) # Pass max_length
+        test_loader = DataLoader(test_dataset, batch_size=16)
+
+        test_accuracy, test_f1, test_predictions, test_true, test_probs = detector.evaluate(
+            test_loader, return_predictions=True
+        )
+
+        print(f"\n=== Final Test Results ===")
+        print(f"Test Accuracy: {test_accuracy:.4f}")
+        print(f"Test F1 Score: {test_f1:.4f}")
+
+        # Classification report
+        print(f"\nClassification Report:")
+        print(classification_report(test_true, test_predictions,
+                                  target_names=detector.class_names))
+
+        # Plot confusion matrix
+        detector.plot_confusion_matrix(test_true, test_predictions)
+
+        # Example predictions
+        print(f"\n=== Example Predictions ===")
+        sample_texts = [
+            "You're an amazing person!",
+            "I hate everyone like you",
+            "You're so dumb",
+            "This is a normal conversation"
+        ]
+
+        predictions, probabilities = detector.predict(sample_texts)
+
+        for text, pred, prob in zip(sample_texts, predictions, probabilities):
+            print(f"Text: {text}")
+            print(f"Prediction: {pred}")
+            print(f"Probabilities: {dict(zip(detector.class_names, prob))}")
+            print()
+
+    except Exception as e:
+        print(f"Error: {e}")
+        print("\nPlease make sure:")
+        print("1. The file path is correct")
+        print("2. The file format is supported (CSV, JSON, Excel, TSV)")
+        print("3. The column names match your dataset")
+        print("4. The dataset contains both text and label columns")
+
+if __name__ == "__main__":
+    main()

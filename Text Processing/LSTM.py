@@ -1,0 +1,242 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sb
+from sklearn.model_selection import train_test_split
+
+import nltk
+import string
+import warnings
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+from wordcloud import WordCloud
+
+import tensorflow as tf
+from tensorflow import keras
+from keras import layers
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+nltk.download('stopwords')
+nltk.download('omw-1.4')
+nltk.download('wordnet')
+warnings.filterwarnings('ignore')
+
+df = pd.read_csv('/content/hate_speech.csv')
+df.head()
+
+df.shape
+
+df.info()
+
+plt.pie(df['class'].value_counts().values,
+        labels = df['class'].value_counts().index,
+        autopct='%1.1f%%')
+plt.show()
+
+class_0 = df[df['class'] == 0]  # Hate Speech
+class_1 = df[df['class'] == 1].sample(n=3500, random_state=42)  # Offensive Language
+class_2 = df[df['class'] == 2]  # Neutral
+
+balanced_df = pd.concat([class_0, class_0, class_0, class_1, class_2], axis=0)
+
+# Visualize the balanced distribution
+plt.pie(balanced_df['class'].value_counts().values,
+        labels=balanced_df['class'].value_counts().index,
+        autopct='%1.1f%%')
+plt.title("Balanced Class Distribution")
+plt.show()
+
+import re
+
+def remove_urls(text):
+    return re.sub(r'http\S+|www.\S+', '', text)
+
+df['tweet'] = df['tweet'].apply(remove_urls)
+
+def normalize_repeated_chars(text):
+    return re.sub(r'(.)\1{2,}', r'\1', text)
+
+df['tweet'] = df['tweet'].apply(normalize_repeated_chars)
+
+def remove_numbers(text):
+    return re.sub(r'\d+', '', text)
+
+df['tweet'] = df['tweet'].apply(remove_numbers)
+
+!pip install contractions
+
+import contractions
+
+def expand_contractions(text):
+    return contractions.fix(text)
+
+df['tweet'] = df['tweet'].apply(expand_contractions)
+
+slang_dict = {
+    "u": "you",
+    "ur": "your",
+    "wtf": "what the fuck",
+    "idk": "i do not know",
+    "imo": "in my opinion"
+}
+
+def slang_normalizer(text):
+    words = text.split()
+    words = [slang_dict.get(w, w) for w in words]
+    return " ".join(words)
+
+df['tweet'] = df['tweet'].apply(slang_normalizer)
+
+df['tweet'] = df['tweet'].str.lower()
+df['tweet'] = df['tweet'].apply(remove_urls)
+df['tweet'] = df['tweet'].apply(normalize_repeated_chars)
+df['tweet'] = df['tweet'].apply(remove_numbers)
+df['tweet'] = df['tweet'].apply(expand_contractions)
+df['tweet'] = df['tweet'].apply(slang_normalizer)
+
+import string
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+
+# Definition of remove_punctuations
+punctuations_list = string.punctuation
+def remove_punctuations(text):
+    temp = str.maketrans('', '', punctuations_list)
+    return text.translate(temp)
+
+# Definition of preprocess_text
+def preprocess_text(text):
+    stop_words = set(stopwords.words('english'))
+    lemmatizer = WordNetLemmatizer()
+    words = [lemmatizer.lemmatize(word) for word in text.split() if word not in stop_words]
+    return " ".join(words)
+
+df['tweet']= df['tweet'].apply(lambda x: remove_punctuations(x))
+balanced_df['tweet'] = balanced_df['tweet'].apply(preprocess_text)
+
+df['tweet'] = df['tweet'].str.lower()
+
+punctuations_list = string.punctuation
+def remove_punctuations(text):
+    temp = str.maketrans('', '', punctuations_list)
+    return text.translate(temp)
+
+df['tweet']= df['tweet'].apply(lambda x: remove_punctuations(x))
+df.head()
+
+def preprocess_text(text):
+    stop_words = set(stopwords.words('english'))
+    lemmatizer = WordNetLemmatizer()
+    words = [lemmatizer.lemmatize(word) for word in text.split() if word not in stop_words]
+    return " ".join(words)
+
+balanced_df['tweet'] = balanced_df['tweet'].apply(preprocess_text)
+
+def plot_word_cloud(data, typ):
+    corpus = " ".join(data['tweet'])
+    wc = WordCloud(max_words=100, width=800, height=400, collocations=False).generate(corpus)
+    plt.figure(figsize=(10, 5))
+    plt.imshow(wc, interpolation='bilinear')
+    plt.axis('off')
+    plt.title(f"Word Cloud for {typ} Class", fontsize=15)
+    plt.show()
+
+plot_word_cloud(balanced_df[balanced_df['class'] == 2], typ="Neutral")
+
+features = balanced_df['tweet']
+target = balanced_df['class']
+X_train, X_val, Y_train, Y_val = train_test_split(features, target, test_size=0.2, random_state=42)
+
+# One-hot encode the labels
+Y_train = pd.get_dummies(Y_train)
+Y_val = pd.get_dummies(Y_val)
+
+# Tokenization
+max_words = 5000
+max_len = 100
+tokenizer = Tokenizer(num_words=max_words, lower=True, split=' ')
+tokenizer.fit_on_texts(X_train)
+
+# Convert text to sequences
+X_train_seq = tokenizer.texts_to_sequences(X_train)
+X_val_seq = tokenizer.texts_to_sequences(X_val)
+
+# Pad sequences
+X_train_padded = pad_sequences(X_train_seq, maxlen=max_len, padding='post', truncating='post')
+X_val_padded = pad_sequences(X_val_seq, maxlen=max_len, padding='post', truncating='post')
+
+from tensorflow import keras
+from tensorflow.keras import layers
+
+max_words = 10000
+max_len = 100
+
+model = keras.models.Sequential([
+    layers.Embedding(input_dim=max_words, output_dim=32, input_length=max_len),
+    layers.Bidirectional(layers.LSTM(16)),
+    layers.Dense(512, activation='relu', kernel_regularizer='l1'),
+    layers.BatchNormalization(),
+    layers.Dropout(0.3),
+    layers.Dense(3, activation='softmax')
+])
+
+model.build(input_shape=(None, max_len))
+
+model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+
+model.summary()
+
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
+
+es = EarlyStopping(patience=3, monitor='val_accuracy', restore_best_weights=True)
+lr = ReduceLROnPlateau(patience=2, monitor='val_loss', factor=0.5, verbose=0)
+
+history = model.fit(X_train_padded, Y_train, validation_data=(X_val_padded, Y_val), epochs=50, batch_size=30, callbacks=[es, lr])
+
+test_loss, test_acc = model.evaluate(X_val_padded, Y_val)
+print(f"Validation Accuracy: {test_acc:.2f}")
+
+def predict_hate_speech(text, model, tokenizer, max_len):
+
+    preprocessed_text = preprocess_text(text.lower())
+
+    sequence = tokenizer.texts_to_sequences([preprocessed_text])
+    padded_sequence = pad_sequences(sequence, maxlen=max_len, padding='post', truncating='post')
+
+    prediction = model.predict(padded_sequence)
+    predicted_class = np.argmax(prediction, axis=1)[0]
+
+    if predicted_class == 0:
+        return "Hate Speech"
+    elif predicted_class == 1:
+        return "Offensive Language"
+    else:
+        return "Neutral"
+
+user_input = input("Enter text to classify: ")
+
+result = predict_hate_speech(user_input, model, tokenizer, max_len)
+print(f"The input text is classified as: {result}")
+
+from sklearn.metrics import classification_report
+import numpy as np
+
+# Get predictions on the validation set
+Y_pred_probs = model.predict(X_val_padded)
+Y_pred_labels = np.argmax(Y_pred_probs, axis=1)
+
+# Convert one-hot encoded Y_val to class labels
+Y_true_labels = np.argmax(Y_val.values, axis=1)
+
+# Generate classification report as a dictionary
+report = classification_report(Y_true_labels, Y_pred_labels, target_names=['Hate Speech', 'Offensive Language', 'Neutral'], output_dict=True)
+
+print(f"Overall Accuracy: {report['accuracy']:.6f}\n")
+
+print("Overall Weighted Averages:")
+print(f"*   Precision: {report['weighted avg']['precision']:.6f}")
+print(f"*   Recall: {report['weighted avg']['recall']:.6f}")
+print(f"*   F1-score: {report['weighted avg']['f1-score']:.6f}")

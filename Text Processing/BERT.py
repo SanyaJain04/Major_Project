@@ -1,0 +1,205 @@
+!pip install transformers datasets pyarrow huggingface_hub cleantext contractions
+!pip install datasets
+
+import re
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+import contractions
+import cleantext
+from datasets import Dataset, DatasetDict
+from transformers import AutoTokenizer, DataCollatorWithPadding, TFAutoModelForSequenceClassification
+import tensorflow as tf
+
+!pip install huggingface_hub
+!pip install pyarrow
+
+import zipfile
+import os
+
+zip_file_path = '/content/archive (12).zip'
+extract_dir = '/content/extracted_data'
+
+os.makedirs(extract_dir, exist_ok=True)
+
+with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+    zip_ref.extractall(extract_dir)
+
+print(f"File '{zip_file_path}' unzipped to '{extract_dir}'")
+print(f"Contents of '{extract_dir}':")
+for item in os.listdir(extract_dir):
+    print(item)
+
+DATA_PATH = "/content/extracted_data/labeled_data.csv"
+
+pandas_df = pd.read_csv(DATA_PATH)
+pandas_df.head()
+
+import seaborn as sns
+sns.countplot(x='class', data=pandas_df)
+
+pandas_df['tweet_cleaned'] = pandas_df['tweet'].str.replace('@[A-Za-z0-9]+\s?', '', regex=True)
+pandas_df.head()
+
+from datasets import Dataset
+
+ds = Dataset.from_pandas(pandas_df)
+ds
+
+from datasets import load_dataset
+
+dataset = load_dataset('csv', data_files=DATA_PATH, split='train')
+dataset
+
+train_test_valid = ds.train_test_split()
+
+test_valid = train_test_valid['test'].train_test_split()
+
+train_test_valid_dataset = DatasetDict({
+    'train': train_test_valid['train'],
+    'test': test_valid['test'],
+    'valid': test_valid['train']
+    })
+
+
+dataset = train_test_valid_dataset.remove_columns(['hate_speech', 'offensive_language', 'neither','Unnamed: 0', 'count'])
+dataset
+
+tokenizer = AutoTokenizer.from_pretrained("distilbert-base-cased")
+
+text = "Just checking tokenization"
+
+output = tokenizer(text)
+
+output
+
+tokens = tokenizer.convert_ids_to_tokens(output['input_ids'])
+tokens
+
+print(f"Tokenized text: {tokenizer.convert_tokens_to_string(tokens)}")
+
+print(f"Vocab size is : {tokenizer.vocab_size}")
+
+print(f"Model max length is : {tokenizer.model_max_length}")
+
+print(f"Model input names are: {tokenizer.model_input_names}")
+
+ds
+
+def tokenize_function(train_dataset):
+    return tokenizer(train_dataset['tweet_cleaned'], padding='max_length', truncation=True)
+
+
+tokenized_dataset = dataset.map(tokenize_function, batched=True)
+
+tokenized_dataset
+
+train_dataset = tokenized_dataset['train']
+eval_dataset = tokenized_dataset['valid']
+test_dataset = tokenized_dataset['test']
+
+train_dataset
+
+train_set = train_dataset.remove_columns(['tweet', "tweet_cleaned"]).with_format('tensorflow')
+
+tf_eval_dataset = eval_dataset.remove_columns(['tweet', "tweet_cleaned"]).with_format('tensorflow')
+
+tf_test_dataset = test_dataset.remove_columns(['tweet', "tweet_cleaned"]).with_format('tensorflow')
+
+def tokenize_function(train_dataset):
+    return tokenizer(train_dataset['tweet_cleaned'], padding='max_length', truncation=True, max_length=128)
+
+tokenized_dataset = dataset.map(tokenize_function, batched=True)
+
+train_dataset = tokenized_dataset['train']
+eval_dataset = tokenized_dataset['valid']
+test_dataset = tokenized_dataset['test']
+
+train_set_for_final_model = train_dataset.to_tf_dataset(
+    columns=tokenizer.model_input_names,
+    label_cols=['class'],
+    shuffle=True,
+    batch_size=16
+)
+
+val_set_for_final_model = eval_dataset.to_tf_dataset(
+    columns=tokenizer.model_input_names,
+    label_cols=['class'],
+    shuffle=False,
+    batch_size=16
+)
+
+test_set_for_final_model = test_dataset.to_tf_dataset(
+    columns=tokenizer.model_input_names,
+    label_cols=['class'],
+    shuffle=False,
+    batch_size=16
+)
+
+model = TFAutoModelForSequenceClassification.from_pretrained("bert-base-cased", num_labels=3, use_safetensors=False)
+# model = TFAutoModelForSequenceClassification.from_pretrained("/mnt/e0ccdbdb-22c3-4d9b-9413-fd976a2e99ae/M1/Code_Org/HF_Models/bert-base-uncased", num_labels=3)
+
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=tf.metrics.SparseCategoricalAccuracy()
+)
+
+model = TFAutoModelForSequenceClassification.from_pretrained("distilbert-base-cased", num_labels=3, use_safetensors=False)
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=tf.metrics.SparseCategoricalAccuracy()
+)
+
+history = model.fit(train_set_for_final_model, validation_data=val_set_for_final_model, epochs=5)
+
+test_loss, test_acc = model.evaluate(test_set_for_final_model,verbose=2)
+print('\nTest accuracy:', test_acc)
+
+predict_score_and_class_dict = {
+    0: 'Hate Speech',
+    1: 'Offensive Language',
+    2: 'Neither'
+}
+
+preds = model(tokenizer(["He is useless, I dont know why he came to our neighbourhood", "That guy sucks", "He is such a retard"],return_tensors="tf",padding=True,truncation=True))['logits']
+
+print(preds)
+
+class_preds = np.argmax(preds, axis=1)
+
+for pred in class_preds:
+  print(predict_score_and_class_dict[pred])
+
+predict_score_and_class_dict = {0: 'Hate Speech',
+ 1: 'Offensive Language',
+ 2: 'Neither'}
+preds = model(tokenizer(["He dresses up like a begger thise days"],return_tensors="tf",padding=True,truncation=True))['logits']
+print(preds)
+class_preds = np.argmax(preds, axis=1)
+
+for pred in class_preds:
+  print(predict_score_and_class_dict[pred])
+
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+# Get true labels from the test dataset
+y_true = []
+for batch in test_set_for_final_model:
+    y_true.extend(batch[1].numpy())
+
+# Get predictions from the model
+logits = model.predict(test_set_for_final_model).logits
+y_pred = np.argmax(logits, axis=1)
+
+# Calculate metrics with 'macro' averaging
+precision = precision_score(y_true, y_pred, average='macro')
+recall = recall_score(y_true, y_pred, average='macro')
+f1 = f1_score(y_true, y_pred, average='macro')
+
+print(f"Precision (Macro): {precision:.4f}")
+print(f"Recall (Macro): {recall:.4f}")
+print(f"F1-Score (Macro): {f1:.4f}")

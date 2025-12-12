@@ -1,0 +1,450 @@
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Embedding, Conv1D, MaxPooling1D, LSTM, Dense, Dropout, BatchNormalization, concatenate # Added concatenate
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+import warnings
+warnings.filterwarnings('ignore')
+
+# Download required NLTK data
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+nltk.download('punkt_tab') # Added punkt_tab download
+
+class HateSpeechDetector:
+    def __init__(self, max_features=20000, max_len=150, embedding_dim=100):
+        self.max_features = max_features
+        self.max_len = max_len
+        self.embedding_dim = embedding_dim
+        self.tokenizer = None
+        self.model = None
+        self.label_encoder = None
+        self.lemmatizer = WordNetLemmatizer()
+        self.stop_words = set(stopwords.words('english'))
+
+    def preprocess_text(self, text):
+        """
+        Preprocess text by cleaning and normalizing
+        """
+        if isinstance(text, float):
+            text = str(text)
+
+        # Convert to lowercase
+        text = text.lower()
+
+        # Remove URLs
+        text = re.sub(r'http\S+', '', text)
+
+        # Remove user mentions and hashtags but keep the words
+        text = re.sub(r'@\w+', '', text)
+        text = re.sub(r'#(\w+)', r'\1', text)  # Keep the word without #
+
+        # Remove special characters and digits but keep basic punctuation
+        text = re.sub(r'[^a-zA-Z\s!?]', '', text)
+
+        # Tokenize
+        tokens = word_tokenize(text)
+
+        # Remove stopwords and lemmatize
+        tokens = [self.lemmatizer.lemmatize(token) for token in tokens
+                 if token not in self.stop_words and len(token) > 1]
+
+        return ' '.join(tokens)
+
+    def load_and_prepare_data(self, file_path, text_column, label_column, file_type='csv'):
+        """
+        Load dataset from file and prepare for training
+        Supports CSV, Excel, and JSON files
+        """
+        print("Loading dataset...")
+
+        if file_type == 'csv':
+            df = pd.read_csv(file_path)
+        elif file_type == 'excel':
+            df = pd.read_excel(file_path)
+        elif file_type == 'json':
+            df = pd.read_json(file_path)
+        else:
+            raise ValueError("Unsupported file type. Use 'csv', 'excel', or 'json'")
+
+        print(f"Dataset loaded with {len(df)} samples")
+        print(f"Columns: {df.columns.tolist()}")
+
+        # Check if columns exist
+        if text_column not in df.columns:
+            raise ValueError(f"Text column '{text_column}' not found in dataset")
+        if label_column not in df.columns:
+            raise ValueError(f"Label column '{label_column}' not found in dataset")
+
+        # Extract texts and labels
+        texts = df[text_column].astype(str).tolist()
+        labels = df[label_column].tolist()
+
+        # Show class distribution
+        print("\nClass distribution:")
+        print(df[label_column].value_counts())
+
+        return texts, labels
+
+    def prepare_features(self, texts, labels):
+        """
+        Prepare features and labels for training
+        """
+        # Preprocess texts
+        print("Preprocessing texts...")
+        processed_texts = [self.preprocess_text(text) for text in texts]
+
+        # Encode labels
+        self.label_encoder = LabelEncoder()
+        encoded_labels = self.label_encoder.fit_transform(labels)
+        num_classes = len(self.label_encoder.classes_)
+
+        print(f"Number of classes: {num_classes}")
+        print(f"Classes: {self.label_encoder.classes_}")
+
+        # Tokenize texts
+        self.tokenizer = Tokenizer(num_words=self.max_features, oov_token='<OOV>')
+        self.tokenizer.fit_on_texts(processed_texts)
+
+        # Convert texts to sequences
+        sequences = self.tokenizer.texts_to_sequences(processed_texts)
+
+        # Pad sequences
+        X = pad_sequences(sequences, maxlen=self.max_len)
+
+        # Convert labels to categorical
+        y = tf.keras.utils.to_categorical(encoded_labels)
+
+        return X, y, num_classes
+
+    def build_model(self, num_classes):
+        """
+        Build enhanced CNN-LSTM model
+        """
+        # Input layer
+        input_layer = Input(shape=(self.max_len,))
+
+        # Embedding layer
+        embedding = Embedding(
+            input_dim=self.max_features,
+            output_dim=self.embedding_dim,
+            # input_length=self.max_len # Removed deprecated input_length
+        )(input_layer)
+
+        # Multiple CNN layers with different kernel sizes
+        conv_blocks = []
+
+        # Kernel sizes for capturing different n-grams
+        kernel_sizes = [3, 4, 5]
+
+        for kernel_size in kernel_sizes:
+            conv = Conv1D(128, kernel_size, activation='relu', padding='same')(embedding)
+            pool = MaxPooling1D(2)(conv)
+            conv_blocks.append(pool)
+
+        # Concatenate CNN outputs
+        if len(conv_blocks) > 1:
+            merged = concatenate(conv_blocks, axis=1)
+        else:
+            merged = conv_blocks[0]
+
+        # LSTM layer
+        lstm = LSTM(64, dropout=0.3, recurrent_dropout=0.3, return_sequences=False)(merged)
+
+        # Dense layers with batch normalization
+        dense1 = Dense(128, activation='relu')(lstm)
+        batch_norm1 = BatchNormalization()(dense1)
+        dropout1 = Dropout(0.5)(batch_norm1)
+
+        dense2 = Dense(64, activation='relu')(dropout1)
+        batch_norm2 = BatchNormalization()(dense2)
+        dropout2 = Dropout(0.3)(batch_norm2)
+
+        # Output layer
+        output_layer = Dense(num_classes, activation='softmax')(dropout2)
+
+        # Create model
+        model = Model(inputs=input_layer, outputs=output_layer)
+
+        # Compile model
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+            loss='categorical_crossentropy',
+            metrics=['accuracy', 'precision', 'recall']
+        )
+
+        return model
+
+    def train(self, X, y, num_classes, epochs=50, batch_size=32, validation_split=0.2):
+        """
+        Train the model with callbacks
+        """
+        # Build model
+        self.model = self.build_model(num_classes)
+
+        # Print model summary
+        print("\nModel Architecture:")
+        self.model.summary()
+
+        # Callbacks
+        callbacks = [
+            EarlyStopping(patience=5, restore_best_weights=True, monitor='val_loss'),
+            ReduceLROnPlateau(patience=3, factor=0.5, min_lr=1e-7, monitor='val_loss')
+        ]
+
+        # Train model
+        print("\nTraining model...")
+        history = self.model.fit(
+            X, y,
+            epochs=epochs,
+            batch_size=batch_size,
+            validation_split=validation_split,
+            callbacks=callbacks,
+            verbose=1,
+            shuffle=True
+        )
+
+        return history
+
+    def evaluate(self, X_test, y_test):
+        """
+        Evaluate the model
+        """
+        if self.model is None:
+            raise Exception("Model not trained yet!")
+
+        # Convert one-hot encoded back to labels
+        y_true = np.argmax(y_test, axis=1)
+        y_pred = np.argmax(self.model.predict(X_test), axis=1)
+
+        # Calculate accuracy
+        accuracy = accuracy_score(y_true, y_pred)
+
+        # Classification report
+        print("\nClassification Report:")
+        print(classification_report(y_true, y_pred, target_names=self.label_encoder.classes_))
+
+        # Confusion matrix
+        print("\nConfusion Matrix:")
+        cm = confusion_matrix(y_true, y_pred)
+        print(cm)
+
+        return accuracy, cm
+
+    def predict(self, texts):
+        """
+        Predict classes for new texts
+        """
+        if self.model is None or self.tokenizer is None:
+            raise Exception("Model not trained yet!")
+
+        # Preprocess texts
+        processed_texts = [self.preprocess_text(text) for text in texts]
+
+        # Convert to sequences
+        sequences = self.tokenizer.texts_to_sequences(processed_texts)
+
+        # Pad sequences
+        X = pad_sequences(sequences, maxlen=self.max_len)
+
+        # Make predictions
+        predictions = self.model.predict(X)
+        predicted_classes = np.argmax(predictions, axis=1)
+        predicted_labels = self.label_encoder.inverse_transform(predicted_classes)
+
+        return predicted_labels, predictions
+
+    def save_model(self, model_path='hate_speech_model.h5', tokenizer_path='tokenizer.pkl',
+                   encoder_path='label_encoder.pkl'):
+        """
+        Save model and preprocessing objects
+        """
+        import pickle
+
+        self.model.save(model_path)
+
+        with open(tokenizer_path, 'wb') as f:
+            pickle.dump(self.tokenizer, f)
+
+        with open(encoder_path, 'wb') as f:
+            pickle.dump(self.label_encoder, f)
+
+        print(f"Model saved to {model_path}")
+        print(f"Tokenizer saved to {tokenizer_path}")
+        print(f"Label encoder saved to {encoder_path}")
+
+    @classmethod
+    def load_model(cls, model_path='hate_speech_model.h5', tokenizer_path='tokenizer.pkl',
+                   encoder_path='label_encoder.pkl'):
+        """
+        Load saved model and preprocessing objects
+        """
+        import pickle
+
+        detector = cls()
+        detector.model = tf.keras.models.load_model(model_path)
+
+        with open(tokenizer_path, 'rb') as f:
+            detector.tokenizer = pickle.load(f)
+
+        with open(encoder_path, 'rb') as f:
+            detector.label_encoder = pickle.load(f)
+
+        print("Model loaded successfully!")
+        return detector
+
+def plot_training_history(history):
+    """
+    Plot training history
+    """
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+
+    # Plot accuracy
+    ax1.plot(history.history['accuracy'], label='Training Accuracy')
+    ax1.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    ax1.set_title('Model Accuracy')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Accuracy')
+    ax1.legend()
+
+    # Plot loss
+    ax2.plot(history.history['loss'], label='Training Loss')
+    ax2.plot(history.history['val_loss'], label='Validation Loss')
+    ax2.set_title('Model Loss')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Loss')
+    ax2.legend()
+
+    # Plot precision
+    ax3.plot(history.history['precision'], label='Training Precision')
+    ax3.plot(history.history['val_precision'], label='Validation Precision')
+    ax3.set_title('Model Precision')
+    ax3.set_xlabel('Epoch')
+    ax3.set_ylabel('Precision')
+    ax3.legend()
+
+    # Plot recall
+    ax4.plot(history.history['recall'], label='Training Recall')
+    ax4.plot(history.history['val_recall'], label='Validation Recall')
+    ax4.set_title('Model Recall')
+    ax4.set_xlabel('Epoch')
+    ax4.set_ylabel('Recall')
+    ax4.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_confusion_matrix(cm, class_names):
+    """
+    Plot confusion matrix
+    """
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=class_names, yticklabels=class_names)
+    plt.title('Confusion Matrix')
+    plt.ylabel('True Label')
+    plt.xlabel('Predicted Label')
+    plt.show()
+
+# Example usage with different dataset formats
+if __name__ == "__main__":
+    # Initialize detector
+    detector = HateSpeechDetector(max_features=20000, max_len=100, embedding_dim=100)
+
+    # Load your dataset - MODIFY THESE PATHS AND COLUMN NAMES
+    try:
+        # Option 1: CSV file
+        texts, labels = detector.load_and_prepare_data(
+            file_path='/content/dataset.csv',  # Change to your file path
+            text_column='tweet',            # Change to your text column name
+            label_column='class',          # Change to your label column name
+            file_type='csv'                # Change to 'excel' or 'json' if needed
+        )
+
+        # Prepare features
+        X, y, num_classes = detector.prepare_features(texts, labels)
+
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=np.argmax(y, axis=1)
+        )
+
+        print(f"\nTraining set: {X_train.shape[0]} samples")
+        print(f"Test set: {X_test.shape[0]} samples")
+
+        # Train model
+        history = detector.train(X_train, y_train, num_classes, epochs=30, batch_size=32)
+
+        # Plot training history
+        plot_training_history(history)
+
+        # Evaluate model
+        accuracy, cm = detector.evaluate(X_test, y_test)
+        print(f"\nTest Accuracy: {accuracy:.4f}")
+
+        # Plot confusion matrix
+        plot_confusion_matrix(cm, detector.label_encoder.classes_)
+
+        # Save model
+        detector.save_model()
+
+        # Test predictions
+        test_texts = [
+            "This is a normal conversation",
+            "You are stupid and worthless",
+            "I hate all people from that community",
+            "Great work on the project!",
+            "You should die you pathetic loser"
+        ]
+
+        predicted_labels, probabilities = detector.predict(test_texts)
+
+        print("\nTest Predictions:")
+        for text, label, prob in zip(test_texts, predicted_labels, probabilities):
+            print(f"Text: '{text}'")
+            print(f"Prediction: {label}")
+            print(f"Probabilities: {dict(zip(detector.label_encoder.classes_, prob))}")
+            print("-" * 50)
+
+    except Exception as e:
+        print(f"Error: {e}")
+        print("\nPlease make sure to:")
+        print("1. Update the file path to your dataset")
+        print("2. Update the text_column and label_column names to match your dataset")
+        print("3. Ensure your dataset file exists and is in the correct format")
+
+# Example for loading and using a saved model
+def use_saved_model():
+    """
+    Example of how to load and use a saved model
+    """
+    try:
+        # Load saved model
+        detector = HateSpeechDetector.load_model()
+
+        # Make predictions
+        new_texts = ["This is a test message", "You are an idiot"]
+        predictions, probabilities = detector.predict(new_texts)
+
+        for text, pred, prob in zip(new_texts, predictions, probabilities):
+            print(f"Text: {text}")
+            print(f"Prediction: {pred}")
+            print(f"Confidence: {max(prob):.4f}")
+            print()
+
+    except Exception as e:
+        print(f"Error loading model: {e}")
