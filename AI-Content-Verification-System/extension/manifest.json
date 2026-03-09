@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "AI Content Verification System",
+  "description": "Detects hate speech and offensive language using AI",
+  "version": "1.0",
+
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "contextMenus"
+  ],
+
+  "host_permissions": [
+    "http://127.0.0.1:8000/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html"
+  },
+
+  "background": {
+    "service_worker": "background.js"
+  }
+}

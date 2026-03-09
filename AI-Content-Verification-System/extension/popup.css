@@ -1,0 +1,18 @@
+body {
+  font-family: Arial, sans-serif;
+  width: 250px;
+  padding: 10px;
+}
+
+h2 {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.toggle {
+  margin-top: 10px;
+}
+
+#backend-status {
+  font-weight: bold;
+}
