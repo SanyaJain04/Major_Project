@@ -1,0 +1,8 @@
+# Ignore large model weights
+*.pt
+*.pth
+*.h5
+*.ckpt
+
+# Ignore model folder
+backend/models/ 
