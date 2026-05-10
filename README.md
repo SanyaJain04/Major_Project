@@ -31,14 +31,59 @@ Features:
 8)Integrity Verification
 9)Performance Evaluation Dashboard
 ____________________________________________________________________________________________________________________________________________________________________________________________________________________
+System Architecture
+
+The framework consists of three major modules:
 <img width="625" height="528" alt="image" src="https://github.com/user-attachments/assets/ca3625b3-b936-47fb-a89f-d91bb2dc3d06" />
+&nbsp;
+
+ 1. Text Processing Module
+
+Detects:
+
+Hate Speech
+Offensive Language
+Cyberbullying
+Spam Content
+Models Used
+RoBERTa
+BERT
+HateBERT
+BiLSTM
+CNN + BiLSTM + Attention Mechanism
+
 &nbsp;
 
 <img width="726" height="337" alt="image" src="https://github.com/user-attachments/assets/f5d8a2e3-a26b-41c3-97fc-e610b5138fc4" />
 
 &nbsp;
+2. Image Processing Module
+
+Detects:
+
+Morphed Images
+Manipulated Media
+Forged Images
+Models Used
+EfficientNet-B3
+Vision Transformer (ViT-B/16)
+SwinV2
+ConvNeXtV2
+SVM + HOG
+Random Forest + LBP
 
 <img width="557" height="606" alt="image" src="https://github.com/user-attachments/assets/6dd3eb97-4220-4006-ab5c-02c46f5c2507" />
+3. Video Processing Module
+
+Detects:
+
+Deepfake Videos
+Manipulated Facial Sequences
+Models Used
+EfficientNet
+GRU
+Transformer Architecture
+Hybrid EfficientNet + GRU + Transformer Model
 
 &nbsp;
 <img width="717" height="383" alt="image" src="https://github.com/user-attachments/assets/f1234e1f-3806-4a53-bb8f-ec441521886a" />
