@@ -26,7 +26,8 @@ Objectives: &nbsp;
 
 
 ____________________________________________________________________________________________________________________________________________________________________________________________________________________
-Features:
+Features: &nbsp;
+
 1)Hate Speech Detection &nbsp;
 
 2)Deepfake Video Detection &nbsp;
@@ -58,25 +59,25 @@ The framework consists of three major modules:
 Detects: &nbsp;
 
 
-Hate Speech &nbsp;
+1)Hate Speech &nbsp;
 
-Offensive Language &nbsp;
+2)Offensive Language &nbsp;
 
-Cyberbullying &nbsp;
+3)Cyberbullying &nbsp;
 
-Spam Content&nbsp;
+4)Spam Content&nbsp;
 
 Models Used: &nbsp;
 
-RoBERTa &nbsp;
+1)RoBERTa &nbsp;
 
-BERT &nbsp;
+2)BERT &nbsp;
 
-HateBERT &nbsp;
+3)HateBERT &nbsp;
 
-BiLSTM &nbsp;
+4)BiLSTM &nbsp;
 
-CNN + BiLSTM + Attention Mechanism &nbsp;
+5)CNN + BiLSTM + Attention Mechanism &nbsp;
 
 
 &nbsp;
@@ -85,32 +86,47 @@ CNN + BiLSTM + Attention Mechanism &nbsp;
 
 &nbsp;
 2. Image Processing Module
+&nbsp;
 
-Detects:
+Detects: &nbsp;
 
-Morphed Images
-Manipulated Media
-Forged Images
-Models Used
-EfficientNet-B3
-Vision Transformer (ViT-B/16)
-SwinV2
-ConvNeXtV2
-SVM + HOG
-Random Forest + LBP
+
+1)Morphed Images &nbsp;
+
+2)Manipulated Media  &nbsp;
+
+3)Forged Images &nbsp;
+
+Models Used:&nbsp;
+
+1)EfficientNet-B3 &nbsp;
+
+2)Vision Transformer (ViT-B/16) &nbsp;
+
+3)SwinV2 &nbsp;
+
+4)ConvNeXtV2 &nbsp;
+ 
+5)SVM + HOG &nbsp;
+
+6)Random Forest + LBP &nbsp;
+
 
 <img width="557" height="606" alt="image" src="https://github.com/user-attachments/assets/6dd3eb97-4220-4006-ab5c-02c46f5c2507" />
 3. Video Processing Module
 
-Detects:
+Detects:&nbsp;
 
-Deepfake Videos
-Manipulated Facial Sequences
-Models Used
-EfficientNet
-GRU
-Transformer Architecture
-Hybrid EfficientNet + GRU + Transformer Model
+1)Deepfake Videos&nbsp;
+
+2)Manipulated Facial Sequences&nbsp;
+
+Models Used: &nbsp;
+
+1)EfficientNet
+2)GRU
+3)Transformer Architecture
+4)Hybrid EfficientNet + GRU + Transformer Model
 
 &nbsp;
 <img width="717" height="383" alt="image" src="https://github.com/user-attachments/assets/f1234e1f-3806-4a53-bb8f-ec441521886a" />
