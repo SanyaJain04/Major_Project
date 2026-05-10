@@ -85,6 +85,8 @@ Models Used: &nbsp;
 <img width="726" height="337" alt="image" src="https://github.com/user-attachments/assets/f5d8a2e3-a26b-41c3-97fc-e610b5138fc4" />
 
 &nbsp;
+&nbsp;
+
 2. Image Processing Module
 &nbsp;
 
@@ -113,64 +115,51 @@ Models Used:&nbsp;
 
 
 <img width="557" height="606" alt="image" src="https://github.com/user-attachments/assets/6dd3eb97-4220-4006-ab5c-02c46f5c2507" />
+&nbsp;
+&nbsp;
+
 3. Video Processing Module
 
-Detects:&nbsp;
+Detects: &nbsp;
 
-1)Deepfake Videos&nbsp;
+1)Deepfake Videos &nbsp;
 
-2)Manipulated Facial Sequences&nbsp;
+2)Manipulated Facial Sequences &nbsp;
 
 Models Used: &nbsp;
 
-1)EfficientNet
-2)GRU
-3)Transformer Architecture
-4)Hybrid EfficientNet + GRU + Transformer Model
+1)EfficientNet &nbsp;
+
+2)GRU &nbsp;
+
+3)Transformer Architecture &nbsp;
+
+4)Hybrid EfficientNet + GRU + Transformer Model&nbsp;
+
 
 &nbsp;
 <img width="717" height="383" alt="image" src="https://github.com/user-attachments/assets/f1234e1f-3806-4a53-bb8f-ec441521886a" />
 
+____________________________________________________________________________________________________________________________________________________________________________________________________________________
+Methodology
 
+The methodology combines multimodal deep learning, NLP, and ensemble learning for harmful content detection. Transformer-based models analyze textual content, while CNN and Transformer architectures process manipulated images and deepfake videos using spatial, temporal, and contextual feature extraction.
 
-_____________________________________________________________________________________________________________________________________________________________________________________________________________________
+Ensemble fusion techniques improve robustness, reduce false positives, and support real-time moderation across multiple media formats.
+____________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-Installation Instructions:
-Quick Setup (Google Colab)
-No installation needed! Simply follow these steps:
+Applications:  &nbsp;
+1)Social Media Moderation  &nbsp;
+2)Deepfake Detection Systems  &nbsp;
+3)Online Safety Platforms  &nbsp;
+4)Educational Platforms  &nbsp;
+5)Enterprise Content Verification  &nbsp;
+6)Cyberbullying Prevention  &nbsp;
+7)Digital Integrity Verification  &nbsp;
 
-1) Open Google Colab:
-Go to colab.research.google.com
-Click on "GitHub" tab
-Paste the repository URL.
+____________________________________________________________________________________________________________________________________________________________________________________________________________________
+Conclusion
 
-2) Run Notebooks Directly:
-Open any .ipynb file from the notebooks/ folder
-Click "Runtime" → "Run all" or run each cell individually (▶️)
-All dependencies install automatically
-_____________________________________________________________________________________________________________________________________________________________________________________________________________________
-
-Project Board
-Current Status (Last Updated: December 2025)
-
-Completed Tasks:
-Research & Literature Survey - Comprehensive analysis of 20+ research papers
-Dataset Collection - CASIA v2.0, Twitter Hate Speech
-
-Model Development:
-Text: LR, SVM, LSTM, BERT, RoBERTa, HateBERT, logistic regression, CNN, BiLSTM  and hybrid models implemented
-Image: ViT, EfficientNet-B3, SwinV2, ConvNeXt V2, LSTM and GRU models trained
-Evaluation & Testing - All models evaluated with standard metrics
-
-In Progress:
-Multimodal Fusion - Integrating text and image models
-API Development - REST API for content moderation
-Documentation - Finalizing technical documentation
-
-Planned:
-Real-time Deployment - Cloud deployment on AWS/GCP
-Mobile Integration - Android/iOS SDK development
-Cross-language Support - Multi-lingual hate speech detection
-
-_____________________________________________________________________________________________________________________________________________________________________________________________________________________
+This project developed a multimodal AI framework for detecting harmful content, hate speech, deepfakes, and manipulated media using transformer and hybrid models. The framework improves moderation efficiency, enables real-time analysis, and enhances online trust and safety across digital platforms.
+___________________________________________________________________________________________________________________________________________________________________________________________________
 
