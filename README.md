@@ -1,33 +1,36 @@
 Hybrid Multimodal Content Moderation and Integrity Verification Framework Using Deep Learning and NLP
-Overview
+____________________________________________________________________________________________________________________________________________________________________________________________________________________
+Overview:
 
 This project presents a Hybrid Multimodal Content Moderation and Integrity Verification Framework designed to detect harmful, misleading, and manipulated digital content across text, images, and videos. The system combines Deep Learning, Natural Language Processing (NLP), Computer Vision, and Ensemble Learning to identify cyberbullying, hate speech, spam, misinformation, morphed images, and AI-generated deepfakes in real time.
 
 The framework integrates multiple AI models to improve accuracy, reduce false positives, and support scalable real-world moderation through a Chrome Extension for live web analysis.
-
-Problem Statement
+____________________________________________________________________________________________________________________________________________________________________________________________________________________
+Problem Statement:
 
 Online platforms are increasingly exposed to harmful content such as cyberbullying, harassment, spam, misinformation, and AI-generated deepfakes. Traditional moderation techniques including keyword filtering and manual review fail to handle contextual understanding, scale, and evolving manipulation techniques.
 
 This project addresses these limitations through a multimodal AI framework capable of analyzing text, images, and videos simultaneously for accurate real-time moderation and integrity verification.
+____________________________________________________________________________________________________________________________________________________________________________________________________________________
+Objectives:
+1)Develop a hybrid multimodal framework for detecting harmful and manipulated content across text, images, and videos.
+2)Enable real-time content analysis and alert generation.
+3)Automate moderation using AI, Deep Learning, and NLP.
+4)Improve online safety, trust, and digital well-being.
+5)Enhance scalability and usability through ensemble learning and Chrome extension deployment.]
 
-Objectives
-Develop a hybrid multimodal framework for detecting harmful and manipulated content across text, images, and videos.
-Enable real-time content analysis and alert generation.
-Automate moderation using AI, Deep Learning, and NLP.
-Improve online safety, trust, and digital well-being.
-Enhance scalability and usability through ensemble learning and Chrome extension deployment.
-Features
-Hate Speech Detection
-Deepfake Video Detection
-Morphed Image Detection
-Real-Time Moderation
-Multimodal Content Analysis
-Ensemble Learning
-Chrome Extension Integration
-Integrity Verification
-Performance Evaluation Dashboard
-
+____________________________________________________________________________________________________________________________________________________________________________________________________________________
+Features:
+1)Hate Speech Detection
+2)Deepfake Video Detection
+3)Morphed Image Detection
+4)Real-Time Moderation
+5)Multimodal Content Analysis
+6)Ensemble Learning
+7)Chrome Extension Integration
+8)Integrity Verification
+9)Performance Evaluation Dashboard
+____________________________________________________________________________________________________________________________________________________________________________________________________________________
 <img width="625" height="528" alt="image" src="https://github.com/user-attachments/assets/ca3625b3-b936-47fb-a89f-d91bb2dc3d06" />
 &nbsp;
 
