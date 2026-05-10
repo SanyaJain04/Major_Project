@@ -12,11 +12,16 @@ Online platforms are increasingly exposed to harmful content such as cyberbullyi
 
 This project addresses these limitations through a multimodal AI framework capable of analyzing text, images, and videos simultaneously for accurate real-time moderation and integrity verification.
 ____________________________________________________________________________________________________________________________________________________________________________________________________________________
-Objectives:
+Objectives: &nbsp;
+
 1)Develop a hybrid multimodal framework for detecting harmful and manipulated content across text, images, and videos. &nbsp;
+
 2)Enable real-time content analysis and alert generation. &nbsp;
+
 3)Automate moderation using AI, Deep Learning, and NLP. &nbsp;
+
 4)Improve online safety, trust, and digital well-being. &nbsp;
+
 5)Enhance scalability and usability through ensemble learning and Chrome extension deployment.&nbsp;
 
 
@@ -48,19 +53,31 @@ The framework consists of three major modules:
 &nbsp;
 
  1. Text Processing Module
+&nbsp;
 
-Detects:
+Detects: &nbsp;
 
-Hate Speech
-Offensive Language
-Cyberbullying
-Spam Content
-Models Used
-RoBERTa
-BERT
-HateBERT
-BiLSTM
-CNN + BiLSTM + Attention Mechanism
+
+Hate Speech &nbsp;
+
+Offensive Language &nbsp;
+
+Cyberbullying &nbsp;
+
+Spam Content&nbsp;
+
+Models Used: &nbsp;
+
+RoBERTa &nbsp;
+
+BERT &nbsp;
+
+HateBERT &nbsp;
+
+BiLSTM &nbsp;
+
+CNN + BiLSTM + Attention Mechanism &nbsp;
+
 
 &nbsp;
 
