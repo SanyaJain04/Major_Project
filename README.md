@@ -13,23 +13,33 @@ Online platforms are increasingly exposed to harmful content such as cyberbullyi
 This project addresses these limitations through a multimodal AI framework capable of analyzing text, images, and videos simultaneously for accurate real-time moderation and integrity verification.
 ____________________________________________________________________________________________________________________________________________________________________________________________________________________
 Objectives:
-1)Develop a hybrid multimodal framework for detecting harmful and manipulated content across text, images, and videos.
-2)Enable real-time content analysis and alert generation.
-3)Automate moderation using AI, Deep Learning, and NLP.
-4)Improve online safety, trust, and digital well-being.
-5)Enhance scalability and usability through ensemble learning and Chrome extension deployment.]
+1)Develop a hybrid multimodal framework for detecting harmful and manipulated content across text, images, and videos. &nbsp;
+2)Enable real-time content analysis and alert generation. &nbsp;
+3)Automate moderation using AI, Deep Learning, and NLP. &nbsp;
+4)Improve online safety, trust, and digital well-being. &nbsp;
+5)Enhance scalability and usability through ensemble learning and Chrome extension deployment.&nbsp;
+
 
 ____________________________________________________________________________________________________________________________________________________________________________________________________________________
 Features:
-1)Hate Speech Detection
-2)Deepfake Video Detection
-3)Morphed Image Detection
-4)Real-Time Moderation
-5)Multimodal Content Analysis
-6)Ensemble Learning
-7)Chrome Extension Integration
-8)Integrity Verification
-9)Performance Evaluation Dashboard
+1)Hate Speech Detection &nbsp;
+
+2)Deepfake Video Detection &nbsp;
+
+3)Morphed Image Detection &nbsp;
+
+4)Real-Time Moderation &nbsp;
+
+5)Multimodal Content Analysis &nbsp;
+
+6)Ensemble Learning &nbsp;
+
+7)Chrome Extension Integration &nbsp;
+
+8)Integrity Verification &nbsp;
+
+9)Performance Evaluation Dashboard &nbsp;
+
 ____________________________________________________________________________________________________________________________________________________________________________________________________________________
 System Architecture
 
