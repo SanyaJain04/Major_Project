@@ -10,25 +10,15 @@ Morphed Image/Deepfake Detection using state-of-the-art vision models (ViT, Effi
 The system processes text, images, and video content to identify manipulated media and harmful language in real-time, providing automated moderation for online platforms.
 
 <img width="625" height="528" alt="image" src="https://github.com/user-attachments/assets/ca3625b3-b936-47fb-a89f-d91bb2dc3d06" />
-
-
-
-
+&nbsp;
 
 <img width="726" height="337" alt="image" src="https://github.com/user-attachments/assets/f5d8a2e3-a26b-41c3-97fc-e610b5138fc4" />
 
-
-
-
-
+&nbsp;
 
 <img width="557" height="606" alt="image" src="https://github.com/user-attachments/assets/6dd3eb97-4220-4006-ab5c-02c46f5c2507" />
 
-
-
-
-
-
+&nbsp;
 <img width="717" height="383" alt="image" src="https://github.com/user-attachments/assets/f1234e1f-3806-4a53-bb8f-ec441521886a" />
 
 
