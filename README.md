@@ -149,12 +149,19 @@ Ensemble fusion techniques improve robustness, reduce false positives, and suppo
 ____________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 Applications:  &nbsp;
+
 1)Social Media Moderation  &nbsp;
+
 2)Deepfake Detection Systems  &nbsp;
+
 3)Online Safety Platforms  &nbsp;
+
 4)Educational Platforms  &nbsp;
+
 5)Enterprise Content Verification  &nbsp;
+
 6)Cyberbullying Prevention  &nbsp;
+
 7)Digital Integrity Verification  &nbsp;
 
 ____________________________________________________________________________________________________________________________________________________________________________________________________________________
